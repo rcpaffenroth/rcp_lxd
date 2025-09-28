@@ -1,0 +1,19 @@
+all:
+  vars:
+    ansible_connection: lxd
+    ansible_lxd_remote: local
+
+anisble_host:
+  children: 
+    typeVM:
+
+have_root:
+  children: 
+    typeVM:
+
+have_rcpaffenroth:
+  children: 
+    typeVM:
+  vars:
+    ansible_connection: lxd
+    ansible_lxd_remote: local

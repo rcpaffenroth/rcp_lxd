@@ -1,0 +1,35 @@
+#cloud-config
+# Make it boot a bit faster
+#package_update: true
+#package_upgrade: true
+packages:
+  - python3
+  - openssh-server
+  - sudo
+users:
+  - default
+  - name: rcpaffenroth
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin, docker
+    lock_passwd: false
+    shell: /bin/bash
+    ssh_authorized_keys:
+     - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEvRB7UTPDAB4foOKj8wUAk7KISx1erppFbiXfJO79iF rcpaffenroth@stormbringer
+    # generated using   "openssl passwd -1 -salt SOMESALTHERE"
+    #  From <https://github.com/vmware/photon/issues/659>
+    # L......1......
+    passwd: $1$dsfwdrwi$/uT4Y0ErY0OFI00k6NVB50
+
+# runcmd:
+#   # One-command install, from https://tailscale.com/download/
+#   - ['sh', '-c', 'curl -fsSL https://tailscale.com/install.sh | sh']
+#   # # Set sysctl settings for IP forwarding (useful when configuring an exit node)
+#   # - ['sh', '-c', "echo 'net.ipv4.ip_forward = 1' | sudo tee -a /etc/sysctl.d/99-tailscale.conf && echo 'net.ipv6.conf.all.forwarding = 1' | sudo tee -a /etc/sysctl.d/99-tailscale.conf && sudo sysctl -p /etc/sysctl.d/99-tailscale.conf" ]
+#   # Generate an auth key from your Admin console
+#   # https://login.tailscale.com/admin/settings/keys
+#   # and replace the placeholder below
+#   - ['tailscale', 'up', '--hostname=vm1', '--advertise-tags=tag:work', '--auth-key=????????']
+#   # # (Optional) Include this line to make this node available over Tailscale SSH
+#   # - ['tailscale', 'set', '--ssh']
+#   # # (Optional) Include this line to configure this machine as an exit node
+#   # - ['tailscale', 'set', '--advertise-exit-node']

@@ -1,0 +1,39 @@
+# An example for creating a Ubuntu container and install python
+- hosts: localhost
+  connection: local
+  tasks:
+    - name: Create a started container
+      community.general.lxd_container:
+        name: mycontainer
+        ignore_volatile_options: true
+        state: started
+        source:
+          type: image
+          mode: pull
+          # Provides current (and older) Ubuntu images
+          server: https://cloud-images.ubuntu.com/releases
+          # Protocol used by 'ubuntu' remote (as shown by 'lxc remote list')
+          # protocol: simplestreams
+          # This provides the latest Ubuntu LTS release 22.04
+          alias: jammy
+        profiles: ["default"]
+        wait_for_ipv4_addresses: true
+        timeout: 600
+
+    - name: Check python is installed in container
+      delegate_to: mycontainer
+      ansible.builtin.raw: dpkg -s python
+      register: python_install_check
+      failed_when: python_install_check.rc not in [0, 1]
+      changed_when: false
+
+    - name: Run a command
+      delegate_to: mycontainer
+      ansible.builtin.raw: ls /tmp
+
+    - name: Install python in container
+      delegate_to: mycontainer
+      apt:
+        name: python
+        state: present
+      when: python_install_check.rc == 1

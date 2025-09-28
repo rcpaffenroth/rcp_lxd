@@ -1,0 +1,100 @@
+# An example for creating a Ubuntu container and install python
+- hosts: localhost
+  connection: local
+  vars:
+    vm_name: vm1
+    vm_ssh_port: 2022
+  tasks:
+    - name: Create a started container
+      community.general.lxd_container:
+        name: "{{ vm_name }}"
+        state: started
+        ignore_volatile_options: true
+        source:
+          type: image
+          mode: pull
+          # Provides current (and older) Ubuntu images
+          server: https://cloud-images.ubuntu.com/releases
+          # Protocol used by 'ubuntu' remote (as shown by 'lxc remote list')
+          protocol: simplestreams
+          # This provides the latest Ubuntu LTS release 22.04
+          alias: jammy
+        config:
+          limits.cpu: "2"
+          limits.memory: 4GB
+        profiles: ["default"]
+        wait_for_ipv4_addresses: true
+        timeout: 600
+
+    - name: Check is myssh device exists
+      ansible.builtin.shell: lxc config device list {{ vm_name }} | grep myssh
+      register: myssh_check
+
+    - name: print myssh_check
+      ansible.builtin.debug:
+        var: myssh_check
+
+    - name: Forward a port
+      ansible.builtin.shell: lxc config device add {{ vm_name }} myssh proxy listen=tcp:0.0.0.0:{{ vm_ssh_port }} connect=tcp:127.0.0.1:22
+      when: myssh_check.rc == 1
+
+- hosts: localhost
+  connection: lxd
+  vars:
+    vm_name: vm1
+  tasks:
+    - name: Ensure group "admin" exists
+      delegate_to: "{{ vm_name }}"
+      ansible.builtin.group:
+        name: admin
+        state: present
+    - name: Ensure group "docker" exists
+      delegate_to: "{{ vm_name }}"
+      ansible.builtin.group:
+        name: docker
+        state: present
+    - name: Install sudo
+      delegate_to: "{{ vm_name }}"
+      apt:
+        state: present
+        pkg:
+          - sudo
+    - name: Allow 'admin' group to have passwordless sudo
+      delegate_to: "{{ vm_name }}"
+      # The idea is that some users, like serviceuser, do not have a password
+      lineinfile:
+        dest: /etc/sudoers
+        state: present
+        regexp: "^%admin"
+        line: "%admin ALL=(ALL) NOPASSWD: ALL"
+        validate: "visudo -cf %s"
+    - name: Add the user 'rcpaffenroth'
+      delegate_to: "{{ vm_name }}"
+      # Clear that this does I think :-)
+      ansible.builtin.user:
+        name: rcpaffenroth
+        comment: My personal account
+        # uid: 1000
+        groups: admin, docker
+        shell: /usr/bin/bash
+        home: /home/rcpaffenroth
+        state: present
+    - name: Copy user rcpaffenroth key
+      delegate_to: "{{ vm_name }}"
+      # This is my id_ed25519 key
+      # Note: this makes the .ssh as well.
+      authorized_key:
+        user: rcpaffenroth
+        state: present
+        key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEvRB7UTPDAB4foOKj8wUAk7KISx1erppFbiXfJO79iF rcpaffenroth@stormbringer
+    - name: Python virtual environment support
+      delegate_to: "{{ vm_name }}"
+      apt:
+        state: present
+        install_recommends: no
+        update_cache: yes
+        name:
+          # Python venv and pip
+          - python3-venv
+          - python3-pip
+          - openssh-server

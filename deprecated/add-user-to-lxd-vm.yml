@@ -1,0 +1,12 @@
+---
+- hosts: u1
+  connection: lxd
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Add user rcpaffenroth to the vm
+      user:
+        name: rcpaffenroth
+        state: present
+        groups: sudo
+        append: yes
