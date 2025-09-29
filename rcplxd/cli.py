@@ -77,7 +77,6 @@ def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: b
     
     print(f"Creating {'VM' if vm else 'container'} '{name}' with Ubuntu {distro}...")
     print(f"Resources: {cpu} CPUs, {memory} memory")
-    print_cmd(cmd)
     run(cmd)
     
     # Wait for cloud-init
