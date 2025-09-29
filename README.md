@@ -1,36 +1,143 @@
-# LXD setup of VMs
+# RCP LXD - LXD Container/VM Management Tool
 
-Install lxd
+A Python-based tool for managing LXD containers and VMs with integrated Ansible support.
 
-``` bash
+## Installation
+
+### Prerequisites
+
+Install lxd:
+
+```bash
 sudo snap install lxd
 ```
 
-Then get things setup using
+Then set up LXD:
 
-``` bash
+```bash
 sudo lxd init --minimal
 ```
 
-Most of the interesting stuff can be found in `create.sh` and the simplified Python version `create.py`.
+### Install rcp-lxd
 
-The key idea is to create a VM with a cloud-init configuration that gets it to the point
-where it can be accessed via ssh.  This is done by creating a cloud-init configuration.  Then
-once the VM is created, the rest of the setup can be done via ssh and ansible.
+This package uses `uv` for package management. To install:
 
-So, something like:
-    
-``` bash
-lxc launch ubuntu:jammy vm1 --vm --config=user.user-data="$(cat ./cloud-init)" -c limits.memory=4GiB -c limits.cpu=2
+```bash
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install the package in development mode
+uv pip install -e .
+
+# Or use the convenience script
+./install.sh
 ```
 
-will create a VM with 4GB of memory and 2 CPUs with ssh running.  Then you can
-do something like:
+## Usage
 
-``` bash
-cd $HOME/projects/ansible
-ansible-playbook -i inventory/lxd.yml -i inventory/lxd_groups.yml -l vm1 ~/projects/ansible/playdir/system_setup.yml
-ansible-playbook -i inventory/lxd.yml -i inventory/lxd_groups.yml -l vm1 ~/projects/ansible/playdir/rcpaffenroth_setup.yml
+The tool provides a unified CLI with three main commands:
+
+### Creating Containers/VMs
+
+```bash
+# Create a basic container
+rcp_lxd create --name myvm
+
+# Create a VM (instead of container) with custom resources
+rcp_lxd create --name myvm --vm --cpu 4 --memory 8GiB --distro jammy
+
+# Use a custom cloud-init file
+rcp_lxd create --name myvm --cloud-init ./my-cloud-init
+```
+
+### Managing Containers
+
+```bash
+# Remove a container (with confirmation)
+rcp_lxd clean --name myvm
+
+# Force remove without confirmation
+rcp_lxd clean --name myvm --force
+```
+
+### Running Ansible Playbooks
+
+```bash
+# Run all default playbooks
+rcp_lxd run-ansible --name myvm
+
+# Run specific playbooks
+rcp_lxd run-ansible --name myvm --system-setup --xfce-setup
+
+# Use custom inventory file
+rcp_lxd run-ansible --name myvm --inventory ./my-inventory.ini
+
+# Skip SSH wait (if you know SSH is already available)
+rcp_lxd run-ansible --name myvm --no-wait-ssh
+```
+
+## How It Works
+## How It Works
+
+The tool creates LXD containers or VMs with cloud-init configuration to enable SSH access, then optionally runs Ansible playbooks for further configuration.
+
+Key workflow:
+1. **Create**: Launch container/VM with cloud-init (sets up user, SSH keys, etc.)
+2. **Configure**: Automatically create Ansible inventory and SSH helper scripts
+3. **Provision**: Run Ansible playbooks for system setup, user configuration, etc.
+
+## Cloud-Init Configuration
+
+The tool uses a cloud-init file (default: `./cloud-init`) to bootstrap the container/VM. This typically includes:
+- Creating user accounts
+- Setting up SSH keys
+- Installing basic packages
+- Configuring network settings
+
+## Ansible Integration
+
+The tool integrates with Ansible playbooks located in `~/projects/ansible/playdir/`:
+- `system_setup.yml` - Basic system configuration
+- `rcpaffenroth_setup.yml` - User-specific setup
+- `tailscale_setup.yml` - Tailscale VPN setup
+- `xfce_setup.yml` - Desktop environment setup
+
+## Migration from Old Scripts
+
+If you were using the old individual Python scripts (`create.py`, `clean.py`, `run_ansible.py`), here's the migration guide:
+
+| Old Command | New Command |
+|-------------|-------------|
+| `./create.py --name vm1` | `rcp_lxd create --name vm1` |
+| `./clean.py --name vm1` | `rcp_lxd clean --name vm1` |
+| `./run_ansible.py --name vm1` | `rcp_lxd run-ansible --name vm1` |
+
+The old scripts are still available in the repository for reference but are no longer the recommended approach.
+
+## Development
+
+The package is structured as a modern Python project:
+
+```
+rcplxd/
+├── __init__.py          # Package initialization
+├── cli.py               # Main CLI interface
+├── core.py              # Core LXD utilities
+├── container.py         # Container management
+└── ansible_utils.py     # Ansible integration
+```
+
+To contribute:
+1. Make your changes
+2. Test locally: `uv pip install -e .`
+3. Run the commands to ensure they work as expected
+
+## Notes
+
+- The tool creates temporary inventory files in `./inventory/` 
+- SSH helper scripts are created for convenience (e.g., `ssh_vm1.sh`)
+- The tool waits for cloud-init completion before proceeding
+- All Ansible playbooks include `--skip-tags=slow` by default for faster execution
 ```
 
 ## Python CLI (recommended for simplicity)
