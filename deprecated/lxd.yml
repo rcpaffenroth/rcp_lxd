@@ -1,9 +1,0 @@
-# simple lxd.yml for virtual machines
-plugin: community.general.lxd
-url: unix:/var/snap/lxd/common/lxd/unix.socket
-type_filter: both
-
-groupby:
-  typeVM:
-    type: type
-    attribute: virtual-machine
