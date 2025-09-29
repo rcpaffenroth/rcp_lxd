@@ -76,16 +76,6 @@ rcp_lxd run-ansible --name myvm --inventory ./my-inventory.ini
 rcp_lxd run-ansible --name myvm --no-wait-ssh
 ```
 
-## How It Works
-## How It Works
-
-The tool creates LXD containers or VMs with cloud-init configuration to enable SSH access, then optionally runs Ansible playbooks for further configuration.
-
-Key workflow:
-1. **Create**: Launch container/VM with cloud-init (sets up user, SSH keys, etc.)
-2. **Configure**: Automatically create Ansible inventory and SSH helper scripts
-3. **Provision**: Run Ansible playbooks for system setup, user configuration, etc.
-
 ## Cloud-Init Configuration
 
 The tool uses a cloud-init file (default: `./cloud-init`) to bootstrap the container/VM. This typically includes:
@@ -101,18 +91,6 @@ The tool integrates with Ansible playbooks located in `~/projects/ansible/playdi
 - `rcpaffenroth_setup.yml` - User-specific setup
 - `tailscale_setup.yml` - Tailscale VPN setup
 - `xfce_setup.yml` - Desktop environment setup
-
-## Migration from Old Scripts
-
-If you were using the old individual Python scripts (`create.py`, `clean.py`, `run_ansible.py`), here's the migration guide:
-
-| Old Command | New Command |
-|-------------|-------------|
-| `./create.py --name vm1` | `rcp_lxd create --name vm1` |
-| `./clean.py --name vm1` | `rcp_lxd clean --name vm1` |
-| `./run_ansible.py --name vm1` | `rcp_lxd run-ansible --name vm1` |
-
-The old scripts are still available in the repository for reference but are no longer the recommended approach.
 
 ## Development
 
@@ -138,7 +116,6 @@ To contribute:
 - SSH helper scripts are created for convenience (e.g., `ssh_vm1.sh`)
 - The tool waits for cloud-init completion before proceeding
 - All Ansible playbooks include `--skip-tags=slow` by default for faster execution
-```
 
 ## Python CLI (recommended for simplicity)
 
