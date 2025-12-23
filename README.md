@@ -42,6 +42,7 @@ The tool provides a unified CLI with three main commands:
 ```bash
 rcp_lxd create --name vm-gui-v2 --cpu 4 --memory 16GiB --distro noble
 rcp_lxd run-ansible --name vm-gui-v2 --all
+rcp_lxd run-ansible --name vm-gui-v2 --playbook xfce_setup.yml
 rcp_lxd clean --name vm-gui-v2
 ```
 
