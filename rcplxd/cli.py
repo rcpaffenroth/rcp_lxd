@@ -108,9 +108,8 @@ def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: b
 @click.option("--system-setup", is_flag=True, help="Run system_setup.yml")
 @click.option("--rcpaffenroth-setup", is_flag=True, help="Run rcpaffenroth_setup.yml")
 @click.option("--tailscale-setup", is_flag=True, help="Run tailscale_setup.yml")
-@click.option("--xfce-setup", is_flag=True, help="Run xfce_setup.yml")
 def run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool, 
-                rcpaffenroth_setup: bool, tailscale_setup: bool, xfce_setup: bool):
+                rcpaffenroth_setup: bool, tailscale_setup: bool):
     """Run Ansible playbooks against an LXD container/VM."""
     
     ip = get_container_ip(name)
@@ -130,7 +129,7 @@ def run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool,
         wait_for_ssh(ip)
     
     # Select playbooks
-    if run_all or not any([system_setup, rcpaffenroth_setup, tailscale_setup, xfce_setup]):
+    if run_all or not any([system_setup, rcpaffenroth_setup, tailscale_setup]):
         system_setup = rcpaffenroth_setup = tailscale_setup = xfce_setup = True
     
     # Run playbooks
@@ -143,9 +142,6 @@ def run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool,
     if tailscale_setup:
         run_ansible_playbook(inv_file, name, "tailscale_setup.yml", 
                            ["-e", f"TAILSCALE_HOSTNAME=ts{name}", "--skip-tags=slow,nonlocal"])
-    
-    if xfce_setup:
-        run_ansible_playbook(inv_file, name, "xfce_setup.yml", ["--skip-tags=slow,nonlocal"])
 
 
 if __name__ == "__main__":

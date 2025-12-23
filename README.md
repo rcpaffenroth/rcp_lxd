@@ -37,6 +37,14 @@ uv pip install -e .
 
 The tool provides a unified CLI with three main commands:
 
+### Classic flow
+
+```bash
+rcp_lxd create --name vm-gui-v2 --cpu 4 --memory 16GiB --distro noble
+rcp_lxd run-ansible --name vm-gui-v2 --all
+rcp_lxd clean --name vm-gui-v2
+```
+
 ### Creating Containers/VMs
 
 ```bash
@@ -67,7 +75,10 @@ rcp_lxd clean --name myvm --force
 rcp_lxd run-ansible --name myvm
 
 # Run specific playbooks
-rcp_lxd run-ansible --name myvm --system-setup --xfce-setup
+rcp_lxd run-ansible --name myvm --system-setup 
+
+# Run all playbooks
+rcp_lxd run-ansible --name myvm --all
 
 # Use custom inventory file
 rcp_lxd run-ansible --name myvm --inventory ./my-inventory.ini
@@ -90,7 +101,6 @@ The tool integrates with Ansible playbooks located in `~/projects/ansible/playdi
 - `system_setup.yml` - Basic system configuration
 - `rcpaffenroth_setup.yml` - User-specific setup
 - `tailscale_setup.yml` - Tailscale VPN setup
-- `xfce_setup.yml` - Desktop environment setup
 
 ## Development
 
@@ -134,7 +144,7 @@ Flags supported (subset mirrors the shell script):
 To run Ansible playbooks, there's a separate helper:
 
 ```bash
-./run_ansible.py -n vm1 --all          # run all playbooks (system, rcpaffenroth, tailscale, xfce)
+./run_ansible.py -n vm1 --all          # run all playbooks (system, rcpaffenroth, tailscale)
 ./run_ansible.py -n vm1 --system-setup  # or choose specific ones
 ```
 
