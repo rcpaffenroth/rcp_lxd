@@ -80,8 +80,11 @@ rcp_lxd run-ansible --name myvm --system-setup
 # Run all playbooks
 rcp_lxd run-ansible --name myvm --all
 
-# Use custom inventory file
-rcp_lxd run-ansible --name myvm --inventory ./my-inventory.ini
+# Run arbitrary playbook from ansible/playdir directory
+rcp_lxd run-ansible --name myvm --playbook xfce_setup.yml
+
+# Run playbook with extra ansible arguments
+rcp_lxd run-ansible --name myvm --playbook xfce_setup.yml -e "--skip-tags=slow" -e "--verbose"
 
 # Skip SSH wait (if you know SSH is already available)
 rcp_lxd run-ansible --name myvm --no-wait-ssh

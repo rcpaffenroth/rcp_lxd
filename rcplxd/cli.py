@@ -108,8 +108,11 @@ def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: b
 @click.option("--system-setup", is_flag=True, help="Run system_setup.yml")
 @click.option("--rcpaffenroth-setup", is_flag=True, help="Run rcpaffenroth_setup.yml")
 @click.option("--tailscale-setup", is_flag=True, help="Run tailscale_setup.yml")
+@click.option("--playbook", "-p", help="Run arbitrary playbook (e.g., xfce_setup.yml)")
+@click.option("--extra-args", "-e", multiple=True, help="Additional ansible arguments")
 def run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool, 
-                rcpaffenroth_setup: bool, tailscale_setup: bool):
+                rcpaffenroth_setup: bool, tailscale_setup: bool, playbook: str | None,
+                extra_args: tuple[str, ...]):
     """Run Ansible playbooks against an LXD container/VM."""
     
     ip = get_container_ip(name)
@@ -128,9 +131,15 @@ def run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool,
         print("Waiting for SSH...")
         wait_for_ssh(ip)
     
+    # Handle custom playbook
+    if playbook:
+        args = list(extra_args) if extra_args else []
+        run_ansible_playbook(inv_file, name, playbook, args)
+        return
+    
     # Select playbooks
     if run_all or not any([system_setup, rcpaffenroth_setup, tailscale_setup]):
-        system_setup = rcpaffenroth_setup = tailscale_setup = xfce_setup = True
+        system_setup = rcpaffenroth_setup = tailscale_setup = True
     
     # Run playbooks
     if system_setup:
