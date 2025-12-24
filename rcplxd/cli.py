@@ -150,7 +150,7 @@ def run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool,
     
     if tailscale_setup:
         run_ansible_playbook(inv_file, name, "tailscale_setup.yml", 
-                           ["-e", f"TAILSCALE_HOSTNAME=ts{name}", "--skip-tags=slow,nonlocal"])
+                           ["-e", f"TAILSCALE_HOSTNAME=ts{name}", "--skip-tags=nonlocal"])
 
 
 if __name__ == "__main__":

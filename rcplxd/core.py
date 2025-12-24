@@ -2,7 +2,7 @@
 
 import shlex
 import subprocess
-
+import json
 
 def run(cmd: list[str]) -> tuple[int, str, str]:
     """Run a shell command and return (code, stdout, stderr)."""
@@ -17,5 +17,7 @@ def print_cmd(cmd: list[str]) -> None:
 
 def get_container_ip(name: str) -> str:
     """Get the IP address of an LXD container/VM."""
-    _, out, _ = run(["lxc", "list", name, "-f", "csv", "-c", "4"])
-    return out.split()[0] if out else ""
+    _, out, _ = run(["lxc", "list", name, "-f", "json"])
+    info = json.loads(out)
+    address = info[0]["state"]["network"].get("eth0", {}).get("addresses", [])
+    return address[0]["address"] if address else ""
