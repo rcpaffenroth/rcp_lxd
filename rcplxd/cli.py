@@ -143,10 +143,10 @@ def run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool,
     
     # Run playbooks
     if system_setup:
-        run_ansible_playbook(inv_file, name, "system_setup.yml", ["--skip-tags=slow"])
+        run_ansible_playbook(inv_file, name, "system_setup.yml", [])
     
     if rcpaffenroth_setup:
-        run_ansible_playbook(inv_file, name, "rcpaffenroth_setup.yml", ["--skip-tags=slow,nonlocal"])
+        run_ansible_playbook(inv_file, name, "rcpaffenroth_setup.yml", ["--skip-tags=nonlocal"])
     
     if tailscale_setup:
         run_ansible_playbook(inv_file, name, "tailscale_setup.yml", 
