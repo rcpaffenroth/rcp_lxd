@@ -39,11 +39,41 @@ The tool provides a unified CLI with three main commands:
 
 ### Classic flow
 
-```bash
-rcp_lxd create --name vm-gui-v2 --cpu 4 --memory 16GiB --distro noble
-rcp_lxd run-ansible --name vm-gui-v2 --all
-rcp_lxd run-ansible --name vm-gui-v2 --playbook kde_setup.yml
-rcp_lxd clean --name vm-gui-v2
+```bash fish
+set -l NAME vm-gui-v2
+# Clean up any existing instance
+rcp_lxd clean --tailscale-logout -f --name $NAME    
+# Create node
+rcp_lxd create --name $NAME --cpu 4 --memory 16GiB --distro noble
+# Run ansible playbooks
+rcp_lxd run-ansible --name $NAME --all
+# Run specific playbook for KDE
+rcp_lxd run-ansible --name $NAME --playbook kde_setup.yml
+# Clean up
+rcp_lxd clean --tailscale-logout -f --name $NAME
+```
+
+### Tailscale testing flow
+
+```bash fish
+set -l NAME vm-gui-v2
+# Clean up any existing instance
+rcp_lxd clean --tailscale-logout -f --name $NAME
+# Create node and run tailscale setup
+rcp_lxd create --name $NAME --cpu 4 --memory 16GiB --distro noble && \
+rcp_lxd run-ansible --name $NAME --tailscale-setup 
+```
+
+### Single command down and up
+
+```bash fish
+set -l NAME vm-gui-v2
+# Clean up any existing instance
+rcp_lxd clean --tailscale-logout -f --name $NAME
+# Create node, run all ansible playbooks, and run kde setup
+rcp_lxd create --name $NAME --cpu 4 --memory 16GiB --distro noble && \
+rcp_lxd run-ansible --name $NAME --all && \
+rcp_lxd run-ansible --name $NAME --playbook kde_setup.yml
 ```
 
 ### Creating Containers/VMs

@@ -19,7 +19,8 @@ def cli():
 @cli.command()
 @click.option("--name", "-n", required=True, help="Container/VM name to remove")
 @click.option("--force", "-f", is_flag=True, help="Remove without confirmation")
-def clean(name: str, force: bool) -> None:
+@click.option("--tailscale-logout", "-t", is_flag=True, help="Logout from Tailscale on removal")
+def clean(name: str, force: bool, tailscale_logout: bool) -> None:
     """Stop and remove an LXD container/VM."""
     if not container_exists(name):
         print(f"Warning: '{name}' does not exist. Nothing to do.")
@@ -34,6 +35,10 @@ def clean(name: str, force: bool) -> None:
     
     if status == "RUNNING":
         print("Stopping...")
+        if tailscale_logout:
+            print("Logging out from Tailscale...")
+            print_cmd(["lxc", "exec", name, "--", "tailscale", "logout"])
+            run(["lxc", "exec", name, "--", "tailscale", "logout"])
         print_cmd(["lxc", "stop", name])
         run(["lxc", "stop", name])
     
