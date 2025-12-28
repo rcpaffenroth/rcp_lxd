@@ -37,6 +37,45 @@ uv pip install -e .
 
 The tool provides a unified CLI with three main commands:
 
+### Classic flow
+
+```bash fish
+set -l NAME vm-gui-v2
+# Clean up any existing instance
+rcp_lxd clean --tailscale-logout -f --name $NAME    
+# Create node
+rcp_lxd create --name $NAME --cpu 4 --memory 16GiB --distro noble
+# Run ansible playbooks
+rcp_lxd run-ansible --name $NAME --all
+# Run specific playbook for KDE
+rcp_lxd run-ansible --name $NAME --playbook kde_setup.yml
+# Clean up
+rcp_lxd clean --tailscale-logout -f --name $NAME
+```
+
+### Tailscale testing flow
+
+```bash fish
+set -l NAME vm-gui-v2
+# Clean up any existing instance
+rcp_lxd clean --tailscale-logout -f --name $NAME
+# Create node and run tailscale setup
+rcp_lxd create --name $NAME --cpu 4 --memory 16GiB --distro noble && \
+rcp_lxd run-ansible --name $NAME --tailscale-setup 
+```
+
+### Single command down and up
+
+```bash fish
+set -l NAME vm-gui-v2
+# Clean up any existing instance
+rcp_lxd clean --tailscale-logout -f --name $NAME
+# Create node, run all ansible playbooks, and run kde setup
+rcp_lxd create --name $NAME --cpu 4 --memory 16GiB --distro noble && \
+rcp_lxd run-ansible --name $NAME --all && \
+rcp_lxd run-ansible --name $NAME --playbook kde_setup.yml
+```
+
 ### Creating Containers/VMs
 
 ```bash
@@ -67,10 +106,16 @@ rcp_lxd clean --name myvm --force
 rcp_lxd run-ansible --name myvm
 
 # Run specific playbooks
-rcp_lxd run-ansible --name myvm --system-setup --xfce-setup
+rcp_lxd run-ansible --name myvm --system-setup 
 
-# Use custom inventory file
-rcp_lxd run-ansible --name myvm --inventory ./my-inventory.ini
+# Run all playbooks
+rcp_lxd run-ansible --name myvm --all
+
+# Run arbitrary playbook from ansible/playdir directory
+rcp_lxd run-ansible --name myvm --playbook xfce_setup.yml
+
+# Run playbook with extra ansible arguments
+rcp_lxd run-ansible --name myvm --playbook xfce_setup.yml -e "--skip-tags=slow" -e "--verbose"
 
 # Skip SSH wait (if you know SSH is already available)
 rcp_lxd run-ansible --name myvm --no-wait-ssh
@@ -90,7 +135,6 @@ The tool integrates with Ansible playbooks located in `~/projects/ansible/playdi
 - `system_setup.yml` - Basic system configuration
 - `rcpaffenroth_setup.yml` - User-specific setup
 - `tailscale_setup.yml` - Tailscale VPN setup
-- `xfce_setup.yml` - Desktop environment setup
 
 ## Development
 
@@ -134,7 +178,7 @@ Flags supported (subset mirrors the shell script):
 To run Ansible playbooks, there's a separate helper:
 
 ```bash
-./run_ansible.py -n vm1 --all          # run all playbooks (system, rcpaffenroth, tailscale, xfce)
+./run_ansible.py -n vm1 --all          # run all playbooks (system, rcpaffenroth, tailscale)
 ./run_ansible.py -n vm1 --system-setup  # or choose specific ones
 ```
 
