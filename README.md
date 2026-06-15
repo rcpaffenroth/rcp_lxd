@@ -131,10 +131,38 @@ The tool uses a cloud-init file (default: `./cloud-init`) to bootstrap the conta
 
 ## Ansible Integration
 
-The tool integrates with Ansible playbooks located in `~/projects/ansible/playdir/`:
+The tool integrates with a companion Ansible repo. By default it looks for that
+repo at `~/projects/ansible`, running playbooks from its `playdir/` and using its
+`ansible.cfg`:
 - `system_setup.yml` - Basic system configuration
 - `rcpaffenroth_setup.yml` - User-specific setup
 - `tailscale_setup.yml` - Tailscale VPN setup
+
+### Selecting the Ansible repo (`ANSIBLE_REPO`)
+
+The location of the Ansible repo is controlled by the `ANSIBLE_REPO` environment
+variable, which defaults to `~/projects/ansible`. It governs two things:
+
+- **Playbooks** are resolved against `$ANSIBLE_REPO/playdir/`.
+- **Config** is pinned by setting `ANSIBLE_CONFIG=$ANSIBLE_REPO/ansible.cfg`
+  before invoking `ansible-playbook`, so the config no longer depends on the
+  current working directory (there is no longer an `ansible.cfg` symlink in this
+  repo) or on which checkout a symlink happened to point at.
+
+Point it at a specific checkout or git worktree to test playbook changes from
+there instead of the default checkout:
+
+```bash
+# Use the default ~/projects/ansible
+rcp_lxd run-ansible --name myvm --all
+
+# Use a specific worktree/checkout for this run
+ANSIBLE_REPO=~/projects/worktrees/ansible rcp_lxd run-ansible --name myvm --all
+
+# Export it for an entire session
+export ANSIBLE_REPO=~/projects/worktrees/ansible
+rcp_lxd run-ansible --name myvm --playbook kde_setup.yml
+```
 
 ## Development
 
