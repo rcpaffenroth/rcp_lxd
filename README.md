@@ -37,6 +37,26 @@ uv pip install -e .
 
 The tool provides a unified CLI with three main commands:
 
+### Interactive (TUI) mode
+
+Every command works exactly as before from the command line. Adding `-I` /
+`--interactive` instead pops up a small [Textual](https://textual.textualize.io/)
+form, pre-filled with the current defaults (and any flags you also passed), so
+you can edit the options and submit. Submit with the **Submit** button or
+`Ctrl+S`; cancel with **Cancel** or `Esc`.
+
+```bash
+# Configure the new container/VM in a TUI instead of passing every flag
+rcp_lxd create --interactive
+
+# Pre-seed some fields, tweak the rest interactively
+rcp_lxd create --distro mint --cpu 4 -I
+
+# Also available on clean and run-ansible
+rcp_lxd clean -I
+rcp_lxd run-ansible -I
+```
+
 ### Classic flow
 
 ```bash fish
@@ -74,6 +94,32 @@ rcp_lxd clean --tailscale-logout -f --name $NAME
 rcp_lxd create --name $NAME --cpu 4 --memory 16GiB --distro noble && \
 rcp_lxd run-ansible --name $NAME --all && \
 rcp_lxd run-ansible --name $NAME --playbook kde_setup.yml
+```
+
+### Linux Mint XFCE flow
+
+`--distro mint` is a shortcut for the Linux Mint zena image (`images:mint/zena/cloud`).
+Mint is **container-only** — there is no Mint VM image, so `--distro mint --vm`
+errors out. The Mint LXC image is a minimal base with no desktop, so XFCE is
+installed by the `mint_xfce_setup.yml` playbook (native `mint-meta-xfce`), which
+exposes the desktop over VNC.
+
+```bash fish
+set -l NAME mint1
+# Clean up any existing instance
+rcp_lxd clean --tailscale-logout -f --name $NAME
+# Create the Mint node, run the standard playbooks, then install Mint XFCE + VNC
+rcp_lxd create --name $NAME --cpu 4 --memory 16GiB --distro mint && \
+rcp_lxd run-ansible --name $NAME --all && \
+rcp_lxd run-ansible --name $NAME --playbook mint_xfce_setup.yml
+```
+
+The playbook starts a systemd-managed VNC server on display `:1` (port 5901),
+bound to localhost with no VNC password. Reach it through an SSH tunnel:
+
+```bash
+# Tunnel local port 5901 to the node's VNC server, then point a VNC client at localhost:5901
+ssh -N -L 5901:localhost:5901 rcpaffenroth@<node-ip>
 ```
 
 ### Creating Containers/VMs
