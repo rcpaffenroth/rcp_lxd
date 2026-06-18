@@ -35,7 +35,8 @@ uv pip install -e .
 
 ## Usage
 
-The tool provides a unified CLI with three main commands:
+The tool provides a unified CLI with four commands: `create`, `run-ansible`,
+`clean`, and `up` (an interactive `create` + `run-ansible` combo).
 
 ### Interactive (TUI) mode
 
@@ -55,6 +56,16 @@ rcp_lxd create --distro mint --cpu 4 -I
 # Also available on clean and run-ansible
 rcp_lxd clean -I
 rcp_lxd run-ansible -I
+```
+
+#### `up`: create + run-ansible in one form
+
+`rcp_lxd up` is always interactive: one combined form collects both the
+create options and the Ansible playbook selection (the name is entered once),
+then it creates the container/VM and immediately runs Ansible against it.
+
+```bash
+rcp_lxd up
 ```
 
 ### Classic flow

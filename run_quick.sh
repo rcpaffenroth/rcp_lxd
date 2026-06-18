@@ -1,6 +1,6 @@
 #! /bin/bash
 
-NAME=test
+NAME=${1:-test}
 
 # Clean up any existing instance
 rcp_lxd clean --tailscale-logout -f --name $NAME

@@ -17,6 +17,113 @@ DEFAULT_CLOUD_INIT = Path(__file__).resolve().parent.parent / "cloud-init"
 DEFAULT_DISTRO = "resolute"
 
 
+def _create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: bool,
+            ssh_helper: bool = False) -> bool:
+    """Create and configure an LXD container/VM. Returns True if it was created."""
+
+    # Resolve the image. "mint" is a shortcut for the Linux Mint zena image on
+    # the images: remote; we force the /cloud variant because the default Mint
+    # image has no cloud-init, which the rcpaffenroth/SSH bootstrap relies on.
+    if distro.lower() == "mint":
+        if vm:
+            raise click.UsageError("Mint is container-only; --vm is not supported.")
+        image = "images:mint/zena/cloud"
+    else:
+        image = f"ubuntu:{distro}"
+
+    # Handle existing container
+    if container_exists(name):
+        reply = input(f"Container '{name}' already exists. Delete it? [y/N]: ").strip().lower()
+        if reply.startswith("y"):
+            print(f"Deleting existing container '{name}'...")
+            print_cmd(["lxc", "delete", name, "--force"])
+            run(["lxc", "delete", name, "--force"])
+        else:
+            print("Aborting.")
+            return False
+
+    # Launch container/VM
+    cloud_data = Path(cloud_init).read_text(encoding="utf-8")
+    cmd = ["lxc", "launch", image, name]
+    if vm:
+        cmd.append("--vm")
+    cmd += [
+        "--config", f"user.user-data={cloud_data}",
+        "-c", f"limits.memory={memory}",
+        "-c", f"limits.cpu={cpu}",
+    ]
+
+    print(f"Creating {'VM' if vm else 'container'} '{name}' from {image}...")
+    print(f"Resources: {cpu} CPUs, {memory} memory")
+    run(cmd)
+
+    # Wait for cloud-init
+    print("Waiting for container to start and cloud-init to complete...")
+    time.sleep(15)
+
+    # Get IP and create inventory
+    ip = get_container_ip(name)
+    if ip:
+        inv_file = create_inventory_file(name, ip)
+        print(f"Created inventory: {inv_file}")
+
+        # Create SSH helper (ssh_NAME.sh) only when requested
+        if ssh_helper:
+            helper_path = create_ssh_helper(name, ip)
+            if helper_path:
+                print(f"Created SSH helper: {helper_path}")
+    else:
+        print("Warning: Could not determine container IP")
+
+    print(f"\\n=== Container '{name}' created successfully ===")
+    print(f"IP: {ip or '(not available)'}")
+    print(f"To delete: rcp_lxd clean --name {name}")
+    return True
+
+
+def _run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool,
+                 rcpaffenroth_setup: bool, tailscale_setup: bool, playbook: str | None,
+                 extra_args: tuple[str, ...]) -> None:
+    """Run Ansible playbooks against an existing LXD container/VM."""
+
+    ip = get_container_ip(name)
+    if not ip:
+        print(f"Could not determine IP for '{name}'. Is it running?")
+        return
+
+    print(f"Target: {name} ({ip})")
+
+    # Create inventory
+    inv_file = create_inventory_file(name, ip)
+    print(f"Using inventory: {inv_file}")
+
+    # Wait for SSH
+    if wait_ssh:
+        print("Waiting for SSH...")
+        wait_for_ssh(ip)
+
+    # Handle custom playbook
+    if playbook:
+        args = list(extra_args) if extra_args else []
+        run_ansible_playbook(inv_file, name, playbook, args)
+        return
+
+    # Select playbooks
+    if run_all or not any([system_setup, rcpaffenroth_setup, tailscale_setup]):
+        system_setup = rcpaffenroth_setup = tailscale_setup = True
+
+    # Run playbooks
+    if system_setup:
+        run_ansible_playbook(inv_file, name, "system_setup.yml", [])
+
+    if rcpaffenroth_setup:
+        run_ansible_playbook(inv_file, name, "rcpaffenroth_setup.yml", ["--skip-tags=nonlocal"])
+
+    if tailscale_setup:
+        run_ansible_playbook(inv_file, name, "tailscale_setup.yml",
+                           ["-e", f"TAILSCALE_HOSTNAME=ts{name}", "--skip-tags=nonlocal"])
+
+
 @click.group()
 @click.version_option(package_name="rcp-lxd")
 def cli():
@@ -78,8 +185,10 @@ def clean(name: str | None, force: bool, tailscale_logout: bool, interactive: bo
 @click.option("--memory", "-m", default="4GiB", help="Memory size")
 @click.option("--cloud-init", "-i", default=str(DEFAULT_CLOUD_INIT), type=click.Path(exists=True), help="Cloud-init file")
 @click.option("--vm", is_flag=True, help="Create VM instead of container")
+@click.option("--ssh-helper", is_flag=True, help="Write an ssh_NAME.sh login convenience script")
 @click.option("--interactive", "-I", is_flag=True, help="Fill in options via a TUI form")
-def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: bool, interactive: bool):
+def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: bool,
+           ssh_helper: bool, interactive: bool):
     """Create and configure an LXD container/VM with Ubuntu or Mint."""
 
     if interactive:
@@ -91,73 +200,19 @@ def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: b
             Field("memory", "Memory size (e.g. 4GiB)", "text", memory),
             Field("cloud_init", "Cloud-init file", "text", cloud_init),
             Field("vm", "Create as VM (Ubuntu only)", "bool", vm),
+            Field("ssh_helper", "Write ssh_NAME.sh login script", "bool", ssh_helper),
         ])
         if vals is None:
             print("Cancelled.")
             return
-        name, distro, cpu, memory, cloud_init, vm = (
+        name, distro, cpu, memory, cloud_init, vm, ssh_helper = (
             vals["name"], vals["distro"], vals["cpu"],
-            vals["memory"], vals["cloud_init"], vals["vm"],
+            vals["memory"], vals["cloud_init"], vals["vm"], vals["ssh_helper"],
         )
         if not Path(cloud_init).exists():
             raise click.UsageError(f"Cloud-init file not found: {cloud_init}")
 
-    # Resolve the image. "mint" is a shortcut for the Linux Mint zena image on
-    # the images: remote; we force the /cloud variant because the default Mint
-    # image has no cloud-init, which the rcpaffenroth/SSH bootstrap relies on.
-    if distro.lower() == "mint":
-        if vm:
-            raise click.UsageError("Mint is container-only; --vm is not supported.")
-        image = "images:mint/zena/cloud"
-    else:
-        image = f"ubuntu:{distro}"
-
-    # Handle existing container
-    if container_exists(name):
-        reply = input(f"Container '{name}' already exists. Delete it? [y/N]: ").strip().lower()
-        if reply.startswith("y"):
-            print(f"Deleting existing container '{name}'...")
-            print_cmd(["lxc", "delete", name, "--force"])
-            run(["lxc", "delete", name, "--force"])
-        else:
-            print("Aborting.")
-            return
-    
-    # Launch container/VM
-    cloud_data = Path(cloud_init).read_text(encoding="utf-8")
-    cmd = ["lxc", "launch", image, name]
-    if vm:
-        cmd.append("--vm")
-    cmd += [
-        "--config", f"user.user-data={cloud_data}",
-        "-c", f"limits.memory={memory}",
-        "-c", f"limits.cpu={cpu}",
-    ]
-
-    print(f"Creating {'VM' if vm else 'container'} '{name}' from {image}...")
-    print(f"Resources: {cpu} CPUs, {memory} memory")
-    run(cmd)
-    
-    # Wait for cloud-init
-    print("Waiting for container to start and cloud-init to complete...")
-    time.sleep(15)
-    
-    # Get IP and create inventory
-    ip = get_container_ip(name)
-    if ip:
-        inv_file = create_inventory_file(name, ip)
-        print(f"Created inventory: {inv_file}")
-        
-        # Create SSH helper
-        ssh_helper = create_ssh_helper(name, ip)
-        if ssh_helper:
-            print(f"Created SSH helper: {ssh_helper}")
-    else:
-        print("Warning: Could not determine container IP")
-    
-    print(f"\\n=== Container '{name}' created successfully ===")
-    print(f"IP: {ip or '(not available)'}")
-    print(f"To delete: rcp_lxd clean --name {name}")
+    _create(name, distro, cpu, memory, cloud_init, vm, ssh_helper)
 
 
 @cli.command("run-ansible")
@@ -200,42 +255,50 @@ def run_ansible(name: str | None, wait_ssh: bool, run_all: bool, system_setup: b
     if not name:
         raise click.UsageError("Missing option '--name' (or use --interactive).")
 
-    ip = get_container_ip(name)
-    if not ip:
-        print(f"Could not determine IP for '{name}'. Is it running?")
+    _run_ansible(name, wait_ssh, run_all, system_setup, rcpaffenroth_setup,
+                 tailscale_setup, playbook, extra_args)
+
+
+@cli.command()
+def up():
+    """Interactively create a container/VM, then run Ansible against it.
+
+    A single TUI form collects both the create options and the Ansible
+    selection (the name is entered once), then runs create followed by
+    run-ansible.
+    """
+    from .tui import Field, run_form
+    vals = run_form("rcp_lxd up (create + run-ansible)", [
+        Field("name", "Container/VM name", "text", "vm1"),
+        Field("distro", "Ubuntu release, or 'mint' for Linux Mint zena", "text", DEFAULT_DISTRO),
+        Field("cpu", "Number of CPUs", "int", 2),
+        Field("memory", "Memory size (e.g. 4GiB)", "text", "4GiB"),
+        Field("cloud_init", "Cloud-init file", "text", str(DEFAULT_CLOUD_INIT)),
+        Field("vm", "Create as VM (Ubuntu only)", "bool", False),
+        Field("ssh_helper", "Write ssh_NAME.sh login script", "bool", False),
+        Field("run_all", "Run all standard playbooks", "bool", True),
+        Field("system_setup", "Run system_setup.yml", "bool", False),
+        Field("rcpaffenroth_setup", "Run rcpaffenroth_setup.yml", "bool", False),
+        Field("tailscale_setup", "Run tailscale_setup.yml", "bool", False),
+        Field("playbook", "Extra playbook (e.g. mint_xfce_setup.yml)", "text", ""),
+        Field("extra_args", "Extra ansible args (space-separated)", "text", ""),
+    ])
+    if vals is None:
+        print("Cancelled.")
         return
-    
-    print(f"Target: {name} ({ip})")
-    
-    # Create inventory
-    inv_file = create_inventory_file(name, ip)
-    print(f"Using inventory: {inv_file}")
-    
-    # Wait for SSH
-    if wait_ssh:
-        print("Waiting for SSH...")
-        wait_for_ssh(ip)
-    
-    # Handle custom playbook
-    if playbook:
-        args = list(extra_args) if extra_args else []
-        run_ansible_playbook(inv_file, name, playbook, args)
+    if not Path(vals["cloud_init"]).exists():
+        raise click.UsageError(f"Cloud-init file not found: {vals['cloud_init']}")
+
+    if not _create(vals["name"], vals["distro"], vals["cpu"], vals["memory"],
+                   vals["cloud_init"], vals["vm"], vals["ssh_helper"]):
         return
-    
-    # Select playbooks
-    if run_all or not any([system_setup, rcpaffenroth_setup, tailscale_setup]):
-        system_setup = rcpaffenroth_setup = tailscale_setup = True
-    
-    # Run playbooks
-    if system_setup:
-        run_ansible_playbook(inv_file, name, "system_setup.yml", [])
-    
-    if rcpaffenroth_setup:
-        run_ansible_playbook(inv_file, name, "rcpaffenroth_setup.yml", ["--skip-tags=nonlocal"])
-    
-    if tailscale_setup:
-        run_ansible_playbook(inv_file, name, "tailscale_setup.yml", 
-                           ["-e", f"TAILSCALE_HOSTNAME=ts{name}", "--skip-tags=nonlocal"])
+
+    _run_ansible(
+        vals["name"], wait_ssh=True, run_all=vals["run_all"],
+        system_setup=vals["system_setup"], rcpaffenroth_setup=vals["rcpaffenroth_setup"],
+        tailscale_setup=vals["tailscale_setup"], playbook=vals["playbook"] or None,
+        extra_args=tuple(vals["extra_args"].split()),
+    )
 
 
 if __name__ == "__main__":
