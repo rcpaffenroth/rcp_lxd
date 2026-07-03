@@ -34,15 +34,13 @@ def create_inventory_file(name: str, ip: str) -> Path:
     inv_dir.mkdir(exist_ok=True)
     inventory_path = inv_dir / f"{name}_temp.ini"
     
-    inventory_content = f"""
-{name} ansible_host={ip} ansible_user=rcpaffenroth ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+    inventory_content = f"""{name} ansible_host={ip} ansible_user=rcpaffenroth ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
 [have_root]
 {name}
 
 [have_rcpaffenroth]
-{name}
-"""
+{name}"""
     
     inventory_path.write_text(inventory_content, encoding="utf-8")
     return inventory_path

@@ -1,5 +1,6 @@
 """Test core utilities."""
 
+import json
 from unittest.mock import patch
 
 from rcplxd.core import run, print_cmd, get_container_ip
@@ -30,19 +31,21 @@ def test_print_cmd(capsys):
 @patch('rcplxd.core.run')
 def test_get_container_ip_success(mock_run):
     """Test get_container_ip with successful result."""
-    mock_run.return_value = (0, "192.168.1.100 (eth0)", "")
-    
+    info = [{"state": {"network": {"eth0": {"addresses": [{"address": "192.168.1.100"}]}}}}]
+    mock_run.return_value = (0, json.dumps(info), "")
+
     ip = get_container_ip("test-vm")
-    
+
     assert ip == "192.168.1.100"
-    mock_run.assert_called_once_with(["lxc", "list", "test-vm", "-f", "csv", "-c", "4"])
+    mock_run.assert_called_once_with(["lxc", "list", "test-vm", "-f", "json"])
 
 
 @patch('rcplxd.core.run')
 def test_get_container_ip_no_output(mock_run):
-    """Test get_container_ip with no output."""
-    mock_run.return_value = (0, "", "")
-    
+    """Test get_container_ip with no network address."""
+    info = [{"state": {"network": {}}}]
+    mock_run.return_value = (0, json.dumps(info), "")
+
     ip = get_container_ip("test-vm")
-    
+
     assert ip == ""

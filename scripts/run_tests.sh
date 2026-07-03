@@ -2,11 +2,10 @@
 
 # Run tests using pytest
 
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+
 echo "Installing dev dependencies..."
-uv pip install -e .[dev] || {
-    echo "Failed to install with [dev] extras, trying dev-dependencies..."
-    uv sync --dev
-}
+uv sync --group dev
 
 echo ""
 echo "Running pytest..."

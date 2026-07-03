@@ -30,7 +30,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv pip install -e .
 
 # Or use the convenience script
-./install.sh
+./scripts/install.sh
 ```
 
 ## Usage
