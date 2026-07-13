@@ -16,7 +16,7 @@ users:
     lock_passwd: false
     shell: /bin/bash
     ssh_authorized_keys:
-     - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEvRB7UTPDAB4foOKj8wUAk7KISx1erppFbiXfJO79iF rcpaffenroth@stormbringer
+     - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJRKPMv+3j3zD13ezaOJ3MOih5HBMoPGW9ha6ddj8k3e rcpaffenroth@abaddon
     # generated using   "openssl passwd -1 -salt SOMESALTHERE"
     #  From <https://github.com/vmware/photon/issues/659>
     # L......1......
