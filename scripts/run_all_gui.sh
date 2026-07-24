@@ -1,6 +1,7 @@
 #! /bin/bash
 
-for VERSION in kde cinnamon mate; do
+#for VERSION in kde cinnamon mate; do
+for VERSION in kde; do
     for NUMBER in 1 2; do
         export NAME=vm-gui-$VERSION-$NUMBER-v2
         echo "=== Processing $NAME ==="

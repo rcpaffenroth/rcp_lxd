@@ -83,7 +83,7 @@ def _create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: 
 
 def _run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool,
                  rcpaffenroth_setup: bool, tailscale_setup: bool, playbook: str | None,
-                 extra_args: tuple[str, ...]) -> None:
+                 extra_args: tuple[str, ...], unsafe_ok: bool = False) -> None:
     """Run Ansible playbooks against an existing LXD container/VM."""
 
     ip = get_container_ip(name)
@@ -114,14 +114,17 @@ def _run_ansible(name: str, wait_ssh: bool, run_all: bool, system_setup: bool,
 
     # Run playbooks
     if system_setup:
-        run_ansible_playbook(inv_file, name, "system_setup.yml", [])
+        run_ansible_playbook(inv_file, name, "system_setup.yml", list(extra_args))
 
     if rcpaffenroth_setup:
-        run_ansible_playbook(inv_file, name, "rcpaffenroth_setup.yml", ["--skip-tags=nonlocal"])
+        rcpaffenroth_args = ["--skip-tags=nonlocal"] + list(extra_args)
+        if unsafe_ok:
+            rcpaffenroth_args.append("--tags=unsafe_ok")
+        run_ansible_playbook(inv_file, name, "rcpaffenroth_setup.yml", rcpaffenroth_args)
 
     if tailscale_setup:
         run_ansible_playbook(inv_file, name, "tailscale_setup.yml",
-                           ["-e", f"TAILSCALE_HOSTNAME=ts{name}", "--skip-tags=nonlocal"])
+                           ["-e", f"TAILSCALE_HOSTNAME=ts{name}", "--skip-tags=nonlocal"] + list(extra_args))
 
 
 @click.group()
@@ -130,7 +133,16 @@ def cli():
     """LXD container/VM management utilities."""
 
 
-@cli.command()
+@cli.command(epilog="""Examples:
+
+\b
+  # Remove a container (asks for confirmation)
+  rcp_lxd clean --name myvm
+
+\b
+  # Force remove without confirmation
+  rcp_lxd clean --name myvm --force
+""")
 @click.option("--name", "-n", help="Container/VM name to remove")
 @click.option("--force", "-f", is_flag=True, help="Remove without confirmation")
 @click.option("--tailscale-logout", "-t", is_flag=True, help="Logout from Tailscale on removal")
@@ -178,7 +190,24 @@ def clean(name: str | None, force: bool, tailscale_logout: bool, interactive: bo
     print(f"Container '{name}' removed")
 
 
-@cli.command()
+@cli.command(epilog="""Examples:
+
+\b
+  # Create a container with defaults
+  rcp_lxd create --name myvm
+
+\b
+  # Create a Linux Mint container
+  rcp_lxd create --name myvm --distro mint
+
+\b
+  # Create a VM instead of a container, with more resources
+  rcp_lxd create --name myvm --vm --cpu 4 --memory 8GiB
+
+\b
+  # Also write an ssh_myvm.sh login convenience script
+  rcp_lxd create --name myvm --ssh-helper
+""")
 @click.option("--name", "-n", default="vm1", help="Container/VM name")
 @click.option("--distro", "-d", default=DEFAULT_DISTRO, help="Ubuntu release, or 'mint' for Linux Mint zena (container-only)")
 @click.option("--cpu", "-c", default=2, type=int, help="Number of CPUs")
@@ -215,18 +244,44 @@ def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: b
     _create(name, distro, cpu, memory, cloud_init, vm, ssh_helper)
 
 
-@cli.command("run-ansible")
+@cli.command("run-ansible", epilog="""Examples:
+
+\b
+  # Run all default playbooks
+  rcp_lxd run-ansible --name myvm
+
+\b
+  # Run one built-in playbook, restricted to an ansible tag
+  rcp_lxd run-ansible --name myvm --rcpaffenroth-setup -e "--tags=dotfiles"
+
+\b
+  # Also run rcpaffenroth-setup's 'unsafe_ok'-tagged tasks (restricts that
+  # run to unsafe_ok-tagged tasks only)
+  rcp_lxd run-ansible --name myvm --rcpaffenroth-setup --unsafe-ok
+
+\b
+  # Run an arbitrary playbook, passing tags/vars via -e (repeat -e per flag)
+  rcp_lxd run-ansible --name myvm --playbook xfce_setup.yml -e "--tags=install" -e "--skip-tags=slow"
+
+\b
+  # Skip waiting for SSH if you know it's already up
+  rcp_lxd run-ansible --name myvm --no-wait-ssh --all
+""")
 @click.option("--name", "-n", help="Container/VM name")
 @click.option("--wait-ssh/--no-wait-ssh", default=True, help="Wait for SSH")
 @click.option("--all", "run_all", is_flag=True, help="Run all playbooks")
 @click.option("--system-setup", is_flag=True, help="Run system_setup.yml")
 @click.option("--rcpaffenroth-setup", is_flag=True, help="Run rcpaffenroth_setup.yml")
+@click.option("--unsafe-ok", is_flag=True,
+              help="With --rcpaffenroth-setup (or --all): also add --tags=unsafe_ok, "
+                   "restricting that run to tasks tagged 'unsafe_ok'")
 @click.option("--tailscale-setup", is_flag=True, help="Run tailscale_setup.yml")
 @click.option("--playbook", "-p", help="Run arbitrary playbook (e.g., xfce_setup.yml)")
-@click.option("--extra-args", "-e", multiple=True, help="Additional ansible arguments")
+@click.option("--extra-args", "-e", multiple=True,
+              help="Additional ansible arguments, e.g. --tags/--skip-tags/--extra-vars (repeatable)")
 @click.option("--interactive", "-I", is_flag=True, help="Fill in options via a TUI form")
 def run_ansible(name: str | None, wait_ssh: bool, run_all: bool, system_setup: bool,
-                rcpaffenroth_setup: bool, tailscale_setup: bool, playbook: str | None,
+                rcpaffenroth_setup: bool, unsafe_ok: bool, tailscale_setup: bool, playbook: str | None,
                 extra_args: tuple[str, ...], interactive: bool):
     """Run Ansible playbooks against an LXD container/VM."""
 
@@ -238,6 +293,7 @@ def run_ansible(name: str | None, wait_ssh: bool, run_all: bool, system_setup: b
             Field("run_all", "Run all playbooks", "bool", run_all),
             Field("system_setup", "Run system_setup.yml", "bool", system_setup),
             Field("rcpaffenroth_setup", "Run rcpaffenroth_setup.yml", "bool", rcpaffenroth_setup),
+            Field("unsafe_ok", "Also run rcpaffenroth-setup's unsafe_ok tasks (restricts to those)", "bool", unsafe_ok),
             Field("tailscale_setup", "Run tailscale_setup.yml", "bool", tailscale_setup),
             Field("playbook", "Arbitrary playbook (e.g. xfce_setup.yml)", "text", playbook or ""),
             Field("extra_args", "Extra ansible args (space-separated)", "text", " ".join(extra_args)),
@@ -248,6 +304,7 @@ def run_ansible(name: str | None, wait_ssh: bool, run_all: bool, system_setup: b
         name = vals["name"]
         wait_ssh, run_all = vals["wait_ssh"], vals["run_all"]
         system_setup, rcpaffenroth_setup = vals["system_setup"], vals["rcpaffenroth_setup"]
+        unsafe_ok = vals["unsafe_ok"]
         tailscale_setup = vals["tailscale_setup"]
         playbook = vals["playbook"] or None
         extra_args = tuple(vals["extra_args"].split())
@@ -256,7 +313,7 @@ def run_ansible(name: str | None, wait_ssh: bool, run_all: bool, system_setup: b
         raise click.UsageError("Missing option '--name' (or use --interactive).")
 
     _run_ansible(name, wait_ssh, run_all, system_setup, rcpaffenroth_setup,
-                 tailscale_setup, playbook, extra_args)
+                 tailscale_setup, playbook, extra_args, unsafe_ok)
 
 
 @cli.command()
@@ -279,6 +336,7 @@ def up():
         Field("run_all", "Run all standard playbooks", "bool", True),
         Field("system_setup", "Run system_setup.yml", "bool", False),
         Field("rcpaffenroth_setup", "Run rcpaffenroth_setup.yml", "bool", False),
+        Field("unsafe_ok", "Also run rcpaffenroth-setup's unsafe_ok tasks (restricts to those)", "bool", False),
         Field("tailscale_setup", "Run tailscale_setup.yml", "bool", False),
         Field("playbook", "Extra playbook (e.g. mint_xfce_setup.yml)", "text", ""),
         Field("extra_args", "Extra ansible args (space-separated)", "text", ""),
@@ -297,7 +355,7 @@ def up():
         vals["name"], wait_ssh=True, run_all=vals["run_all"],
         system_setup=vals["system_setup"], rcpaffenroth_setup=vals["rcpaffenroth_setup"],
         tailscale_setup=vals["tailscale_setup"], playbook=vals["playbook"] or None,
-        extra_args=tuple(vals["extra_args"].split()),
+        extra_args=tuple(vals["extra_args"].split()), unsafe_ok=vals["unsafe_ok"],
     )
 
 

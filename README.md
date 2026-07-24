@@ -174,6 +174,13 @@ rcp_lxd run-ansible --name myvm --playbook xfce_setup.yml
 # Run playbook with extra ansible arguments
 rcp_lxd run-ansible --name myvm --playbook xfce_setup.yml -e "--skip-tags=slow" -e "--verbose"
 
+# Run one built-in playbook restricted to a tag
+rcp_lxd run-ansible --name myvm --rcpaffenroth-setup -e "--tags=dotfiles"
+
+# Also run rcpaffenroth-setup's 'unsafe_ok'-tagged tasks
+# (this adds --tags=unsafe_ok, which restricts that run to unsafe_ok-tagged tasks only)
+rcp_lxd run-ansible --name myvm --rcpaffenroth-setup --unsafe-ok
+
 # Skip SSH wait (if you know SSH is already available)
 rcp_lxd run-ansible --name myvm --no-wait-ssh
 ```
