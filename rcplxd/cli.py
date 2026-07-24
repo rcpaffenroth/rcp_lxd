@@ -6,7 +6,13 @@ from pathlib import Path
 import click
 
 from .ansible_utils import create_inventory_file, run_ansible_playbook, wait_for_ssh
-from .container import container_exists, create_ssh_helper, get_container_status
+from .container import (
+    container_exists,
+    create_ssh_helper,
+    get_container_status,
+    list_host_gpus,
+    resolve_gpus,
+)
 from .core import get_container_ip, print_cmd, run
 
 # The cloud-init file ships at the repo root, one level above this package.
@@ -17,9 +23,24 @@ DEFAULT_CLOUD_INIT = Path(__file__).resolve().parent.parent / "cloud-init"
 DEFAULT_DISTRO = "resolute"
 
 
+def _resolve_gpu_option(gpu: tuple[str, ...]) -> list[dict[str, str]]:
+    """Resolve the repeatable --gpu selectors, reporting bad input as a usage error."""
+    if not any(spec.strip() for spec in gpu):
+        return []
+    try:
+        return resolve_gpus(gpu)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+
 def _create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: bool,
-            ssh_helper: bool = False) -> bool:
-    """Create and configure an LXD container/VM. Returns True if it was created."""
+            ssh_helper: bool = False, gpus: list[dict[str, str]] | None = None) -> bool:
+    """Create and configure an LXD container/VM. Returns True if it was created.
+
+    gpus is the already-resolved list from _resolve_gpu_option(); empty/None
+    means no GPU passthrough.
+    """
+    gpus = gpus or []
 
     # Resolve the image. "mint" is a shortcut for the Linux Mint zena image on
     # the images: remote; we force the /cloud variant because the default Mint
@@ -42,9 +63,11 @@ def _create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: 
             print("Aborting.")
             return False
 
-    # Launch container/VM
+    # Create the instance. This is `lxc init` + `lxc start` rather than a single
+    # `lxc launch` because GPU devices have to be attached in between: `lxc launch
+    # -d` can only override devices inherited from a profile, not add new ones.
     cloud_data = Path(cloud_init).read_text(encoding="utf-8")
-    cmd = ["lxc", "launch", image, name]
+    cmd = ["lxc", "init", image, name]
     if vm:
         cmd.append("--vm")
     cmd += [
@@ -52,10 +75,39 @@ def _create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: 
         "-c", f"limits.memory={memory}",
         "-c", f"limits.cpu={cpu}",
     ]
+    if gpus and not vm:
+        # LXD's nvidia hook bind-mounts the host's driver/CUDA userspace libraries
+        # into the container, so no driver needs installing inside. Only the GPUs
+        # attached as devices below become visible. VMs get vfio PCI passthrough
+        # instead, where these keys do not apply.
+        cmd += ["-c", "nvidia.runtime=true", "-c", "nvidia.driver.capabilities=all"]
 
     print(f"Creating {'VM' if vm else 'container'} '{name}' from {image}...")
     print(f"Resources: {cpu} CPUs, {memory} memory")
-    run(cmd)
+    if gpus:
+        print("GPUs: " + ", ".join(f"{g['index']} ({g['name']} @ {g['pci']})" for g in gpus))
+        if vm:
+            print("Warning: VM passthrough rebinds the GPU to vfio-pci, making it "
+                  "unavailable to the host until the VM is stopped.")
+
+    rc, _, err = run(cmd)
+    if rc != 0:
+        print(f"Failed to create '{name}': {err}")
+        return False
+
+    for i, gpu in enumerate(gpus):
+        dev_cmd = ["lxc", "config", "device", "add", name, f"gpu{i}", "gpu",
+                   f"pci={gpu['pci']}"]
+        print_cmd(dev_cmd)
+        rc, _, err = run(dev_cmd)
+        if rc != 0:
+            print(f"Failed to attach GPU {gpu['index']}: {err}")
+            return False
+
+    rc, _, err = run(["lxc", "start", name])
+    if rc != 0:
+        print(f"Failed to start '{name}': {err}")
+        return False
 
     # Wait for cloud-init
     print("Waiting for container to start and cloud-init to complete...")
@@ -205,6 +257,14 @@ def clean(name: str | None, force: bool, tailscale_logout: bool, interactive: bo
   rcp_lxd create --name myvm --vm --cpu 4 --memory 8GiB
 
 \b
+  # Pass through host GPU 0 (indices are the ones 'nvidia-smi -L' prints)
+  rcp_lxd create --name myvm --gpu 0
+
+\b
+  # Pass through both GPUs (equivalently: --gpu 0,1 or --gpu 0 --gpu 1)
+  rcp_lxd create --name myvm --gpu all
+
+\b
   # Also write an ssh_myvm.sh login convenience script
   rcp_lxd create --name myvm --ssh-helper
 """)
@@ -214,10 +274,13 @@ def clean(name: str | None, force: bool, tailscale_logout: bool, interactive: bo
 @click.option("--memory", "-m", default="4GiB", help="Memory size")
 @click.option("--cloud-init", "-i", default=str(DEFAULT_CLOUD_INIT), type=click.Path(exists=True), help="Cloud-init file")
 @click.option("--vm", is_flag=True, help="Create VM instead of container")
+@click.option("--gpu", "-g", multiple=True,
+              help="Pass through host GPU(s) by nvidia-smi index, or 'all'. "
+                   "Repeatable and/or comma-separated: -g 0, -g 0,1, -g 0 -g 1, -g all")
 @click.option("--ssh-helper", is_flag=True, help="Write an ssh_NAME.sh login convenience script")
 @click.option("--interactive", "-I", is_flag=True, help="Fill in options via a TUI form")
 def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: bool,
-           ssh_helper: bool, interactive: bool):
+           gpu: tuple[str, ...], ssh_helper: bool, interactive: bool):
     """Create and configure an LXD container/VM with Ubuntu or Mint."""
 
     if interactive:
@@ -229,6 +292,7 @@ def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: b
             Field("memory", "Memory size (e.g. 4GiB)", "text", memory),
             Field("cloud_init", "Cloud-init file", "text", cloud_init),
             Field("vm", "Create as VM (Ubuntu only)", "bool", vm),
+            Field("gpu", "GPUs to pass through: indices, 'all', or blank for none", "text", ",".join(gpu)),
             Field("ssh_helper", "Write ssh_NAME.sh login script", "bool", ssh_helper),
         ])
         if vals is None:
@@ -238,10 +302,28 @@ def create(name: str, distro: str, cpu: int, memory: str, cloud_init: str, vm: b
             vals["name"], vals["distro"], vals["cpu"],
             vals["memory"], vals["cloud_init"], vals["vm"], vals["ssh_helper"],
         )
+        gpu = (vals["gpu"],)
         if not Path(cloud_init).exists():
             raise click.UsageError(f"Cloud-init file not found: {cloud_init}")
 
-    _create(name, distro, cpu, memory, cloud_init, vm, ssh_helper)
+    _create(name, distro, cpu, memory, cloud_init, vm, ssh_helper,
+            _resolve_gpu_option(gpu))
+
+
+@cli.command()
+def gpus() -> None:
+    """List the host GPUs available for 'create --gpu' passthrough."""
+    try:
+        found = list_host_gpus()
+    except ValueError as exc:
+        # ClickException prints just "Error: ..." — this command takes no
+        # arguments, so a usage hint would be noise.
+        raise click.ClickException(str(exc)) from exc
+
+    width = max(len(g["name"]) for g in found)
+    print(f"{'INDEX':<5}  {'NAME':<{width}}  PCI")
+    for g in found:
+        print(f"{g['index']:<5}  {g['name']:<{width}}  {g['pci']}")
 
 
 @cli.command("run-ansible", epilog="""Examples:
@@ -332,6 +414,7 @@ def up():
         Field("memory", "Memory size (e.g. 4GiB)", "text", "4GiB"),
         Field("cloud_init", "Cloud-init file", "text", str(DEFAULT_CLOUD_INIT)),
         Field("vm", "Create as VM (Ubuntu only)", "bool", False),
+        Field("gpu", "GPUs to pass through: indices, 'all', or blank for none", "text", ""),
         Field("ssh_helper", "Write ssh_NAME.sh login script", "bool", False),
         Field("run_all", "Run all standard playbooks", "bool", True),
         Field("system_setup", "Run system_setup.yml", "bool", False),
@@ -348,7 +431,8 @@ def up():
         raise click.UsageError(f"Cloud-init file not found: {vals['cloud_init']}")
 
     if not _create(vals["name"], vals["distro"], vals["cpu"], vals["memory"],
-                   vals["cloud_init"], vals["vm"], vals["ssh_helper"]):
+                   vals["cloud_init"], vals["vm"], vals["ssh_helper"],
+                   _resolve_gpu_option((vals["gpu"],))):
         return
 
     _run_ansible(

@@ -35,8 +35,8 @@ uv pip install -e .
 
 ## Usage
 
-The tool provides a unified CLI with four commands: `create`, `run-ansible`,
-`clean`, and `up` (an interactive `create` + `run-ansible` combo).
+The tool provides a unified CLI with five commands: `create`, `run-ansible`,
+`clean`, `gpus`, and `up` (an interactive `create` + `run-ansible` combo).
 
 ### Interactive (TUI) mode
 
@@ -145,6 +145,42 @@ rcp_lxd create --name myvm --vm --cpu 4 --memory 8GiB --distro jammy
 # Use a custom cloud-init file
 rcp_lxd create --name myvm --cloud-init ./my-cloud-init
 ```
+
+### GPU Passthrough
+
+`--gpu` / `-g` attaches host GPUs to the new container. GPUs are selected by
+their `nvidia-smi` index; `rcp_lxd gpus` shows what the current host offers:
+
+```bash
+$ rcp_lxd gpus
+INDEX  NAME                     PCI
+0      NVIDIA GeForce RTX 4090  0000:41:00.0
+1      NVIDIA GeForce RTX 4090  0000:61:00.0
+```
+
+Indices, models, and PCI addresses are read from the host at run time, so the
+same commands work unchanged on any machine:
+
+```bash
+# One GPU
+rcp_lxd create --name myvm --gpu 0
+
+# Both GPUs — these three are equivalent
+rcp_lxd create --name myvm --gpu all
+rcp_lxd create --name myvm --gpu 0,1
+rcp_lxd create --name myvm --gpu 0 -g 1
+```
+
+For containers this also sets `nvidia.runtime=true`, which makes LXD bind-mount
+the host's NVIDIA driver and CUDA userspace libraries into the container. No
+driver needs to be installed inside — but the CUDA toolkit/PyTorch build in the
+container must be compatible with the *host's* driver version. Only the attached
+GPUs are visible, and they are renumbered from 0 inside the container (so
+`--gpu 1` shows up as `GPU 0` to `nvidia-smi` there).
+
+`--gpu` also works with `--vm`, but that is real vfio PCI passthrough: the GPU is
+unbound from the host driver and unavailable to the host until the VM stops.
+Containers are the right choice for sharing GPUs with the host.
 
 ### Managing Containers
 
