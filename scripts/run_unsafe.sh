@@ -7,5 +7,7 @@ uv run rcp_lxd clean --tailscale-logout -f --name $NAME
         
 # Create node, run all ansible playbooks, and run desktop setup
 uv run rcp_lxd create --name $NAME --cpu 4 --memory 16GiB --gpu 0 --distro resolute
-uv run rcp_lxd run-ansible --name $NAME --all --unsafe-ok
+uv run rcp_lxd run-ansible --name $NAME --system-setup 
+uv run rcp_lxd run-ansible --name $NAME --rcpaffenroth-setup --unsafe-ok
+uv run rcp_lxd run-ansible --name $NAME --tailscale-setup 
 
