@@ -1,1 +1,0 @@
-@~/.claude/infra.md
